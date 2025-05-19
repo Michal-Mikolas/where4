@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Where4 - 4 Word Addresses</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+          crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+            crossorigin=""></script>
+    <style>
+        textarea::-webkit-scrollbar { width: 8px; }
+        textarea::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+        textarea::-webkit-scrollbar-thumb { background: #888; border-radius: 10px; }
+        textarea::-webkit-scrollbar-thumb:hover { background: #555; }
+        
+        #map {
+            height: 542px; 
+            position: relative; 
+            overflow: hidden;  
+        }
+
+        #map-crosshair-h, #map-crosshair-v {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.3); 
+            pointer-events: none; 
+            z-index: 999;         
+        }
+        #map-crosshair-h {
+            top: 50%; left: 0; width: 100%; height: 1px; transform: translateY(-50%);
+        }
+        #map-crosshair-v {
+            left: 50%; top: 0; height: 100%; width: 1px; transform: translateX(-50%);
+        }
+
+        @media (max-width: 767px) {
+            .column-container > div:last-child { margin-top: 1.5rem; }
+        }
+    </style>
+</head>
+<body class="bg-gray-200 min-h-screen flex flex-col items-center justify-center p-4 font-sans">
+    <div class="w-full max-w-5xl">
+
+        <!-- Block 1: Converter UI -->
+        <div class="bg-white p-6 sm:p-8 rounded-xl shadow-2xl w-full">
+            <div class="text-center mb-8">
+                <h1 class="text-4xl font-bold text-gray-700">Where4</h1>
+                <p class="text-lg text-gray-600 mt-1">Pinpoint any location with four simple words.</p>
+            </div>
+
+            <div class="md:flex md:space-x-6 column-container">
+                <!-- Left Column -->
+                <div class="md:w-1/2">
+                    <div class="mb-6">
+                        <label for="coordsInput" class="block text-sm font-semibold text-gray-600 mb-1">Lat/Long Coordinates (or drag map):</label>
+                        <input type="text" id="coordsInput" placeholder="DD.D° H, DD.D° H or DD°MM'SS" H ..."
+                               class="mt-1 block w-full px-4 py-3 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition duration-150 ease-in-out">
+                        <p class="text-xs text-gray-500 mt-1">Supports: DD.D°, DD°MM.M', DD°MM'SS" (or SS''). Comma separator allowed.</p>
+                    </div>
+
+                    <div class="mb-6"> 
+                        <label for="outputWords" class="block text-sm font-semibold text-gray-600 mb-1">Where4 Words (or type to convert back):</label>
+                        <input type="text" id="outputWords" 
+                               placeholder="Words will appear here..."
+                               class="mt-1 block w-full px-4 py-3 bg-blue-50 border border-blue-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:text-lg text-blue-700 font-medium placeholder-gray-400">
+                    </div>
+
+                    <div class="mb-4"> 
+                        <label for="intermediateResults" class="block text-sm font-semibold text-gray-600 mb-1">Processing Details:</label>
+                        <textarea id="intermediateResults" rows="15" readonly
+                                  class="mt-1 block w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-md shadow-sm focus:outline-none sm:text-sm resize-none"></textarea>
+                    </div>
+                </div>
+                <!-- Right Column -->
+                <div class="md:w-1/2">
+                     <label for="map" class="block text-sm font-semibold text-gray-600 mb-1">Location on Map (center is interactive):</label>
+                    <div id="map" class="rounded-lg shadow-md border border-gray-300 mt-1">
+                        <div id="map-crosshair-h"></div>
+                        <div id="map-crosshair-v"></div>
+                    </div>
+                </div>
+            </div>
+        </div> <!-- End Block 1 -->
+
+        <!-- Block 2: Info / README Content -->
+        <div class="bg-white p-6 sm:p-8 rounded-xl shadow-2xl w-full mt-8">
+            <h2 id="what-is-where4" class="text-2xl font-semibold text-gray-700 mt-6 mb-3">What is Where4?</h2>
+            <p class="text-gray-600 mb-3 leading-relaxed">Imagine trying to tell someone your precise location over the phone or radio. Reading out long strings of numbers for latitude and longitude (e.g., <code class="bg-gray-200 text-sm px-1 py-0.5 rounded">"49.7977543° N, 18.2567507° E"</code>) can be cumbersome, error-prone, and hard to remember.</p>
+            <p class="text-gray-600 mb-3 leading-relaxed">Where4 solves this by converting those complex coordinates into a unique combination of four simple, easy-to-pronounce words (e.g., <code class="bg-gray-200 text-sm px-1 py-0.5 rounded">ROBI SEME NERU RODI</code> which maps to the example coordinates).</p>
+            
+            <h3 id="why-use-where4" class="text-xl font-semibold text-gray-700 mt-4 mb-2">Why use a 4-word system like Where4?</h3>
+            <ul class="list-disc list-inside text-gray-600 mb-3 pl-4">
+                <li class="mb-1"><strong class="font-bold">Simplicity & Memorability:</strong> Four common words are far easier to remember, say, and write down than long decimal numbers.</li>
+                <li class="mb-1"><strong class="font-bold">Reduced Errors:</strong> Transcribing or speaking words leads to fewer errors than with sequences of digits and symbols. This is crucial in situations where accuracy is paramount, like emergencies or coordinating over noisy channels.</li>
+                <li class="mb-1"><strong class="font-bold">Ease of Communication:</strong> Ideal for verbal communication (e.g., radio, phone calls) where reading out coordinates is impractical.</li>
+                <li class="mb-1"><strong class="font-bold">Offline Potential:</strong> The core algorithm can be implemented offline, making it useful in areas with no internet access once the system is understood.</li>
+                <li class="mb-1"><strong class="font-bold">Free & Open-Source:</strong> Where4 is freely available for anyone to use, modify, and contribute to. The code is transparent, fostering trust and community-driven improvements.</li>
+                <li class="mb-1"><strong class="font-bold">International Syllables & Pronunciation:</strong> The syllables used by Where4 are not tied to any single language like English. They have been carefully constructed from letters that are common across a vast majority of world languages, avoiding letters with highly variable or problematic pronunciations (e.g., "Y", "C"). This design aims for maximum readability and mutual intelligibility, regardless of the speaker's or listener's native tongue.</li>
+                <li class="mb-1"><strong class="font-bold">Scalability & Precision:</strong> The Where4 system is inherently scalable. While the default uses four words for a high degree of accuracy (approximately 4 meters), it can be adapted:
+                    <ul class="list-disc list-inside text-gray-600 mt-1 mb-1 pl-6"> 
+                        <li class="mb-1"><strong>3 Words:</strong> Provides a location accurate to roughly 200 meters, useful for general areas.</li>
+                        <li class="mb-1"><strong>4 Words (Default):</strong> Offers precision to approximately 4 meters, suitable for most navigation and pinpointing needs.</li>
+                        <li class="mb-1"><strong>5 Words:</strong> Increases accuracy to an incredible 10 centimeters, ideal for highly precise applications.</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h2 id="how-does-it-work" class="text-2xl font-semibold text-gray-700 mt-6 mb-3">How does it work? (Coordinates to Words)</h2>
+            <p class="text-gray-600 mb-3 leading-relaxed">The conversion from latitude/longitude to Where4 words involves a few simple steps:</p>
+            
+            <h3 id="unifying-coordinates" class="text-xl font-semibold text-gray-700 mt-4 mb-2">1. Unifying Coordinates</h3>
+            <ul class="list-disc list-inside text-gray-600 mb-3 pl-4">
+                <li class="mb-1"><strong>Latitude:</strong> Standard latitude ranges from 90°S to 90°N. We convert this to a single range of 0 to 180.
+                    <ul class="list-disc list-inside text-gray-600 mt-1 mb-1 pl-6">
+                        <li class="mb-1">South latitudes (0-90°S) are mapped to 0-90 (e.g., 90°S becomes 0, 0° becomes 90).</li>
+                        <li class="mb-1">North latitudes (0-90°N) are mapped to 90-180 (e.g., 0° becomes 90, 90°N becomes 180).</li>
+                    </ul>
+                </li>
+                <li class="mb-1"><strong>Longitude:</strong> Standard longitude ranges from 180°W to 180°E. We convert this to a single range of 0 to 360.
+                    <ul class="list-disc list-inside text-gray-600 mt-1 mb-1 pl-6">
+                        <li class="mb-1">East longitudes (0-180°E) remain 0-180.</li>
+                        <li class="mb-1">West longitudes (0-180°W) are mapped to 180-360 (e.g., 180°W becomes 180, 0° (prime meridian from West) becomes 360).</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h3 id="normalization" class="text-xl font-semibold text-gray-700 mt-4 mb-2">2. Normalization</h3>
+            <ul class="list-disc list-inside text-gray-600 mb-3 pl-4">
+                <li class="mb-1">The unified latitude (0-180) is then normalized to a decimal value between 0.0 and 1.0 by dividing by 180.</li>
+                <li class="mb-1">The unified longitude (0-360) is normalized to a decimal value between 0.0 and 1.0 by dividing by 360.</li>
+            </ul>
+
+            <h3 id="base-conversion" class="text-xl font-semibold text-gray-700 mt-4 mb-2">3. Base Conversion (The Magic!)</h3>
+            <ul class="list-disc list-inside text-gray-600 mb-3 pl-4">
+                <li class="mb-1">These two normalized decimal values (one for latitude, one for longitude) are then treated as fractional numbers in base-10.</li>
+                <li class="mb-1">We convert the fractional part of each of these normalized numbers into a <strong class="font-bold">base-50</strong> representation.</li>
+                <li class="mb-1">Instead of using digits 00-49 for our base-50 system, Where4 uses a predefined list of 50 unique two-letter syllables (e.g., BA, BE, BI, ..., TU), designed for international readability.</li>
+                <li class="mb-1">The conversion process extracts 4 "digits" (syllables) for the latitude and 4 "digits" (syllables) for the longitude. The number of digits extracted can be varied to adjust precision (see "Scalability" above).</li>
+            </ul>
+
+            <h3 id="word-formation" class="text-xl font-semibold text-gray-700 mt-4 mb-2">4. Word Formation</h3>
+            <ul class="list-disc list-inside text-gray-600 mb-3 pl-4">
+                <li class="mb-1">The final Where4 address is created by combining these syllables:
+                    <ul class="list-disc list-inside text-gray-600 mt-1 mb-1 pl-6">
+                        <li class="mb-1">Word 1: 1st Latitude Syllable + 1st Longitude Syllable</li>
+                        <li class="mb-1">Word 2: 2nd Latitude Syllable + 2nd Longitude Syllable</li>
+                        <li class="mb-1">Word 3: 3rd Latitude Syllable + 3rd Longitude Syllable</li>
+                        <li class="mb-1">Word 4: 4th Latitude Syllable + 4th Longitude Syllable</li>
+                        <li class="mb-1">(And so on, if more words/syllables are used for higher precision)</li>
+                    </ul>
+                </li>
+            </ul>
+            <p class="text-gray-600 mb-3 leading-relaxed">The conversion from words back to coordinates follows these steps in reverse.</p>
+
+            <h2 id="demo" class="text-2xl font-semibold text-gray-700 mt-6 mb-3">Demo</h2>
+            <p class="text-gray-600 mb-3 leading-relaxed">Try out the Where4 converter live:</p>
+            <p class="text-gray-600 mb-3 leading-relaxed">➡️ <a href="https://where4.info" target="_blank" class="text-indigo-600 hover:text-indigo-800 underline"><strong class="font-bold">where4.info</strong></a></p>
+            <p class="text-gray-600 mb-3 leading-relaxed">You can:</p>
+            <ul class="list-disc list-inside text-gray-600 mb-3 pl-4">
+                <li class="mb-1">Enter latitude/longitude coordinates (in DD, DMS, or DM format) to get a 4-word address.</li>
+                <li class="mb-1">Drag the map to a location, and the coordinates and 4-word address will update.</li>
+                <li class="mb-1">Type in a 4-word address to see its corresponding coordinates and location on the map.</li>
+            </ul>
+
+            <h2 id="get-involved" class="text-2xl font-semibold text-gray-700 mt-6 mb-3">Get Involved!</h2>
+            <p class="text-gray-600 mb-3 leading-relaxed">Where4 is an open-source project, and your feedback and contributions are highly welcome!</p>
+            <ul class="list-disc list-inside text-gray-600 mb-3 pl-4">
+                <li class="mb-1"><strong class="font-bold">Found a bug or have a suggestion?</strong> Please <a href="https://github.com/Michal-Mikolas/where4/issues" target="_blank" class="text-indigo-600 hover:text-indigo-800 underline">open an issue</a>.</li>
+                <li class="mb-1"><strong class="font-bold">Want to improve the code or add new features?</strong> Feel free to fork the repository and submit a pull request.</li>
+                <li class="mb-1"><strong class="font-bold">Ideas for use cases?</strong> Share them! The more people who find this useful, the better.</li>
+            </ul>
+            <p class="text-gray-600 mb-3 leading-relaxed">Let's make location sharing simpler and more accessible together!</p>
+        </div> <!-- End Block 2 -->
+
+
+        <!-- Block 3: Footer -->
+        <div class="bg-white p-6 sm:p-8 rounded-xl shadow-2xl w-full mt-8">
+            <footer class="text-center text-sm text-gray-600">
+                <p class="mb-1">Created by <a href="https://www.linkedin.com/in/michal-mikolas/" target="_blank" class="text-gray-600 hover:text-gray-800">Michal Mikoláš</a>
+                    <span class="mx-2">|</span>
+                    GitHub: <a href="https://github.com/Michal-Mikolas/where4" target="_blank" class="text-gray-600 hover:text-gray-800">Michal-Mikolas/where4</a> 
+                    <span class="mx-2">|</span>
+                    License: <a href="https://opensource.org/license/mit" target="_blank" class="text-gray-600 hover:text-gray-800">MIT</a>
+                </p>
+            </footer>
+        </div> <!-- End Block 3 -->
+
+    </div>
+
+    <script>
+        class Where4 { 
+            #syllables = {
+                0: 'BA', 1: 'BE', 2: 'BI', 3: 'BO', 4: 'BU', 5: 'DA', 6: 'DE', 7: 'DI', 8: 'DO', 9: 'DU',
+                10: 'FA', 11: 'FE', 12: 'FI', 13: 'FO', 14: 'FU', 15: 'GA', 16: 'GE', 17: 'GI', 18: 'GO', 19: 'GU',
+                20: 'KA', 21: 'KE', 22: 'KI', 23: 'KO', 24: 'KU', 25: 'MA', 26: 'ME', 27: 'MI', 28: 'MO', 29: 'MU',
+                30: 'NA', 31: 'NE', 32: 'NI', 33: 'NO', 34: 'NU', 35: 'RA', 36: 'RE', 37: 'RI', 38: 'RO', 39: 'RU',
+                40: 'SA', 41: 'SE', 42: 'SI', 43: 'SO', 44: 'SU', 45: 'TA', 46: 'TE', 47: 'TI', 48: 'TO', 49: 'TU'
+            };
+            #reverseSyllables = {};
+
+            constructor() {
+                this.#populateReverseSyllables();
+            }
+
+            #populateReverseSyllables() {
+                for (const digit in this.#syllables) {
+                    this.#reverseSyllables[this.#syllables[digit]] = parseInt(digit, 10);
+                }
+            }
+
+            #convertDecimalToNBaseSyllables(value, base, numDigits) {
+                let resultSyllableArray = [];
+                let currentFractionalValue = value;
+                for (let i = 0; i < numDigits; i++) {
+                    currentFractionalValue *= base;
+                    let digitIndex = Math.floor(currentFractionalValue);
+                    if (digitIndex >= base) digitIndex = base - 1;
+                    if (digitIndex < 0) digitIndex = 0;
+                    resultSyllableArray.push(this.#syllables[digitIndex]);
+                    currentFractionalValue -= digitIndex; 
+                }
+                return resultSyllableArray;
+            }
+
+            _initProcessingDetails(details, rawInput, isReverse = false) {
+                if (details) {
+                    details.rawInput = rawInput;
+                    details.error = null;
+                    if (isReverse) {
+                        details.conversionType = "Words to Coordinates";
+                        details.parsedWordsArray = null;
+                        details.latSyllableArray = null;
+                        details.lngSyllableArray = null;
+                        details.latDigitArray = null;
+                        details.lngDigitArray = null;
+                        details.finalDecoded = null;
+                    } else {
+                        details.conversionType = "Coordinates to Words";
+                        details.detectedFormat = "Unknown";
+                        details.convertedDdString = null;
+                        details.parsed = null;
+                        details.syllablesData = null;
+                    }
+                    details.mapCoords = null;
+                    details.unifiedStage1 = null;
+                    details.normalizedStage2 = null;
+                }
+            }
+            
+            processCoordinates(coordString, processingDetails = null) {
+                this._initProcessingDetails(processingDetails, coordString, false); 
+                let ddLat, ddLng, latHemisphere, lngHemisphere;
+                
+                const dmsRegex = /^(\d{1,3})°\s*(\d{1,2})'\s*(\d{1,2}(?:\.\d*)?)(?:"|'')\s*([NSns])(?:\s*,\s*|\s+)(\d{1,3})°\s*(\d{1,2})'\s*(\d{1,2}(?:\.\d*)?)(?:"|'')\s*([EWew])$/i;
+                const dmRegex = /^(\d{1,3})°\s*(\d{1,2}\.\d+)'\s*([NSns])(?:\s*,\s*|\s+)(\d{1,3})°\s*(\d{1,2}\.\d+)'\s*([EWew])$/i;
+                
+                let matches = coordString.match(dmsRegex);
+                if (matches) {
+                    if (processingDetails) processingDetails.detectedFormat = "DMS";
+                    const [, latDegreesStr, latMinutesStr, latSecondsStr, rawLatHem, lngDegreesStr, lngMinutesStr, lngSecondsStr, rawLngHem] = matches;
+                    
+                    ddLat = parseFloat(latDegreesStr) + (parseFloat(latMinutesStr) / 60) + (parseFloat(latSecondsStr || "0") / 3600);
+                    latHemisphere = rawLatHem.toUpperCase();
+                    ddLng = parseFloat(lngDegreesStr) + (parseFloat(lngMinutesStr) / 60) + (parseFloat(lngSecondsStr || "0") / 3600);
+                    lngHemisphere = rawLngHem.toUpperCase();
+
+                    if (processingDetails) processingDetails.convertedDdString = `${ddLat.toFixed(8)}° ${latHemisphere} ${ddLng.toFixed(8)}° ${lngHemisphere}`;
+                    return this._convertDdInputToWords(ddLat, latHemisphere, ddLng, lngHemisphere, processingDetails);
+                } else {
+                    matches = coordString.match(dmRegex);
+                    if (matches) {
+                        if (processingDetails) processingDetails.detectedFormat = "DM";
+                        const [, latDegreesStr, latMinutesStr, rawLatHem, lngDegreesStr, lngMinutesStr, rawLngHem] = matches;
+                        ddLat = parseFloat(latDegreesStr) + (parseFloat(latMinutesStr) / 60);
+                        latHemisphere = rawLatHem.toUpperCase();
+                        ddLng = parseFloat(lngDegreesStr) + (parseFloat(lngMinutesStr) / 60);
+                        lngHemisphere = rawLngHem.toUpperCase();
+                        if (processingDetails) processingDetails.convertedDdString = `${ddLat.toFixed(8)}° ${latHemisphere} ${ddLng.toFixed(8)}° ${lngHemisphere}`;
+                        return this._convertDdInputToWords(ddLat, latHemisphere, ddLng, lngHemisphere, processingDetails);
+                    } else {
+                        if (processingDetails) processingDetails.detectedFormat = "DD (assumed)";
+                        return this._convertDdInputToWords(coordString, null, null, null, processingDetails);
+                    }
+                }
+            }
+
+            _convertDdInputToWords(latInput, latDirInput, lngInput, lngDirInput, processingDetails) {
+                let latVal, latDir, lngVal, lngDir;
+                if (typeof latInput === 'number' && latDirInput && typeof lngInput === 'number' && lngDirInput) {
+                    latVal = Math.abs(latInput); 
+                    latDir = latDirInput.toUpperCase();
+                    lngVal = Math.abs(lngInput);
+                    lngDir = lngDirInput.toUpperCase();
+                     if (processingDetails) {
+                        processingDetails.parsed = { latVal, latDir, lngVal, lngDir };
+                    }
+                } else if (typeof latInput === 'string') {
+                    const ddRegex = /^(\d+\.?\d*)°\s*([NSns])(?:\s*,\s*|\s+)(\d+\.?\d*)°\s*([EWew])$/i;
+                    const ddMatches = latInput.match(ddRegex); 
+                    if (!ddMatches) { 
+                        const errorMsg = "Error: Invalid coordinate format.\nSupported: DD.D° H, DD.D° H or DD°MM.M' H, DD°MM.M' H or DD°MM'SS\" H, DD°MM'SS\" H (or SS'')";
+                        if (processingDetails) processingDetails.error = errorMsg;
+                        return { words: null, mapCoordinates: null, error: errorMsg };
+                    }
+                    latVal = parseFloat(ddMatches[1]);
+                    latDir = ddMatches[2].toUpperCase();
+                    lngVal = parseFloat(ddMatches[3]);
+                    lngDir = ddMatches[4].toUpperCase();
+                    if (processingDetails) {
+                        processingDetails.parsed = { latVal, latDir, lngVal, lngDir };
+                        if (processingDetails.detectedFormat === "DD (assumed)") {
+                            processingDetails.detectedFormat = "DD";
+                        }
+                    }
+                } else {
+                     const errorMsg = "Internal Error: Invalid arguments to _convertDdInputToWords.";
+                     if (processingDetails) processingDetails.error = errorMsg;
+                     return { words: null, mapCoordinates: null, error: errorMsg };
+                }
+
+                if (latVal < 0 || latVal > 90) {
+                    const errorMsg = `Error: Latitude value (${latVal.toFixed(5)}°) is out of range (0-90).`;
+                    if (processingDetails) processingDetails.error = errorMsg;
+                    return { words: null, mapCoordinates: null, error: errorMsg };
+                }
+                if (lngVal < 0 || lngVal > 180) {
+                    const errorMsg = `Error: Longitude value (${lngVal.toFixed(5)}°) is out of range (0-180).`;
+                    if (processingDetails) processingDetails.error = errorMsg;
+                    return { words: null, mapCoordinates: null, error: errorMsg };
+                }
+                
+                const originalMapLat = (latDir === 'S') ? -latVal : latVal; 
+                const originalMapLng = (lngDir === 'W') ? -lngVal : lngVal; 
+                if (processingDetails) processingDetails.mapCoords = { lat: originalMapLat, lng: originalMapLng };
+
+                let unifiedLat; if (latDir === 'S') unifiedLat = -1 * latVal + 90; else unifiedLat = latVal + 90; 
+                let unifiedLng; if (lngDir === 'W') unifiedLng = -1 * lngVal + 360; else unifiedLng = lngVal; 
+                if (processingDetails) processingDetails.unifiedStage1 = { lat: unifiedLat, lng: unifiedLng };
+
+                const lat_normalized = unifiedLat / 180; 
+                const lng_normalized = unifiedLng / 360; 
+                if (processingDetails) {
+                    processingDetails.normalizedStage2 = { lat: lat_normalized, lng: lng_normalized };
+                }
+
+                const latSyllableArray = this.#convertDecimalToNBaseSyllables(lat_normalized, 50, 4); 
+                const lngSyllableArray = this.#convertDecimalToNBaseSyllables(lng_normalized, 50, 4); 
+                
+                if (processingDetails) {
+                    processingDetails.syllablesData = { 
+                        latArray: latSyllableArray, latString: latSyllableArray.join(''),
+                        lngArray: lngSyllableArray, lngString: lngSyllableArray.join('')
+                    };
+                }
+                
+                let outputWordsArray = []; 
+                if (latSyllableArray.length === 4 && lngSyllableArray.length === 4) {
+                    for (let i = 0; i < 4; i++) outputWordsArray.push(latSyllableArray[i] + lngSyllableArray[i]);
+                    return { 
+                        words: outputWordsArray.join(' '), 
+                        mapCoordinates: { lat: originalMapLat, lng: originalMapLng }, error: null 
+                    };
+                } else {
+                    const errorMsg = "Error generating syllable arrays."; 
+                    if (processingDetails) processingDetails.error = errorMsg;
+                    return { words: null, mapCoordinates: null, error: errorMsg };
+                }
+            }
+
+            #convertNBaseDigitsToDecimal(digitArray, base) {
+                let value = 0.0;
+                for (let i = 0; i < digitArray.length; i++) {
+                    value += digitArray[i] / Math.pow(base, i + 1);
+                }
+                return value;
+            }
+
+            wordsToLatLng(wordsString, processingDetails = null) {
+                this._initProcessingDetails(processingDetails, wordsString, true); 
+
+                const wordsArray = wordsString.trim().toUpperCase().split(' ');
+                if (processingDetails) processingDetails.parsedWordsArray = wordsArray;
+
+                if (wordsArray.length !== 4) {
+                    const errorMsg = "Error: Input must contain exactly 4 words separated by spaces.";
+                    if (processingDetails) processingDetails.error = errorMsg;
+                    return { ddString: null, mapCoordinates: null, error: errorMsg };
+                }
+
+                const latSyllables = [];
+                const lngSyllables = [];
+                const latDigits = [];
+                const lngDigits = [];
+
+                for (const word of wordsArray) {
+                    if (word.length !== 4) {
+                        const errorMsg = `Error: Each word must be 4 characters long. Word "${word}" is not.`;
+                        if (processingDetails) processingDetails.error = errorMsg;
+                        return { ddString: null, mapCoordinates: null, error: errorMsg };
+                    }
+                    const latSyl = word.substring(0, 2);
+                    const lngSyl = word.substring(2, 4);
+
+                    if (!(latSyl in this.#reverseSyllables)) {
+                        const errorMsg = `Error: Invalid latitude syllable "${latSyl}" in word "${word}".`;
+                        if (processingDetails) processingDetails.error = errorMsg;
+                        return { ddString: null, mapCoordinates: null, error: errorMsg };
+                    }
+                    if (!(lngSyl in this.#reverseSyllables)) {
+                        const errorMsg = `Error: Invalid longitude syllable "${lngSyl}" in word "${word}".`;
+                        if (processingDetails) processingDetails.error = errorMsg;
+                        return { ddString: null, mapCoordinates: null, error: errorMsg };
+                    }
+                    latSyllables.push(latSyl);
+                    lngSyllables.push(lngSyl);
+                    latDigits.push(this.#reverseSyllables[latSyl]);
+                    lngDigits.push(this.#reverseSyllables[lngSyl]);
+                }
+
+                if (processingDetails) {
+                    processingDetails.latSyllableArray = latSyllables;
+                    processingDetails.lngSyllableArray = lngSyllables;
+                    processingDetails.latDigitArray = latDigits;
+                    processingDetails.lngDigitArray = lngDigits;
+                }
+
+                const lat_normalized = this.#convertNBaseDigitsToDecimal(latDigits, 50);
+                const lng_normalized = this.#convertNBaseDigitsToDecimal(lngDigits, 50);
+                if (processingDetails) {
+                    processingDetails.normalizedStage2 = { lat: lat_normalized, lng: lng_normalized };
+                }
+
+                let unifiedLat = lat_normalized * 180;
+                let unifiedLng = lng_normalized * 360;
+                const epsilon = 1e-9; 
+                if (Math.abs(lat_normalized - 1.0) < epsilon) unifiedLat = 180.0;
+                if (Math.abs(lng_normalized - 1.0) < epsilon) unifiedLng = 360.0;
+
+                if (processingDetails) {
+                    processingDetails.unifiedStage1 = { lat: unifiedLat, lng: unifiedLng };
+                }
+                
+                let finalLat, finalLatH, finalLng, finalLngH;
+
+                if (unifiedLat < 90.0) { 
+                    finalLat = 90.0 - unifiedLat;
+                    finalLatH = 'S';
+                } else { 
+                    finalLat = unifiedLat - 90.0;
+                    finalLatH = 'N';
+                }
+
+                if (unifiedLng > 180.0 && unifiedLng < 360.0) { 
+                    finalLng = 360.0 - unifiedLng;
+                    finalLngH = 'W';
+                } else { 
+                    finalLng = unifiedLng;
+                     if (finalLng >= 360.0) finalLng = 0.0; 
+                    finalLngH = 'E';
+                }
+                
+                finalLat = Math.abs(finalLat);
+                finalLng = Math.abs(finalLng);
+                if (finalLng === 180.0) finalLngH = 'E';
+
+                if (processingDetails) {
+                    processingDetails.finalDecoded = {
+                        lat: finalLat, latH: finalLatH,
+                        lng: finalLng, lngH: finalLngH
+                    };
+                }
+
+                const ddOutputString = `${finalLat.toFixed(7)}° ${finalLatH} ${finalLng.toFixed(7)}° ${finalLngH}`;
+                
+                const mapLat = (finalLatH === 'S') ? -finalLat : finalLat;
+                const mapLng = (finalLngH === 'W') ? -finalLng : finalLng;
+                if (processingDetails) {
+                    processingDetails.mapCoords = { lat: mapLat, lng: mapLng };
+                }
+
+                return {
+                    ddString: ddOutputString,
+                    mapCoordinates: { lat: mapLat, lng: mapLng },
+                    error: null
+                };
+            }
+        } // End of Where4 class
+
+        $(document).ready(function() {
+            const $coordsInput = $('#coordsInput');
+            const $intermediateResults = $('#intermediateResults');
+            const $outputWords = $('#outputWords');
+            
+            const converter = new Where4(); 
+            
+            const initialCoordinatesString = "49.7977543° N 18.2567507° E";
+            const initialMapCenter = [49.7977543, 18.2567507]; 
+            const initialMapZoomOnLoad = 2; 
+            const zoomLevelForInput = 16;   
+
+            $coordsInput.val(initialCoordinatesString);
+
+            let map = L.map('map').setView(initialMapCenter, initialMapZoomOnLoad);
+            let isUpdatingFromMapMove = false; 
+            let isInitialLoadProcessing = true; 
+            let isUpdatingCoordsFromWords = false; 
+            let wordsUpdateTimeout = null; 
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                maxZoom: 18,
+            }).addTo(map);
+
+            function formatCoordsForInput(lat, lng) {
+                const latH = lat >= 0 ? 'N' : 'S';
+                const lngH = lng >= 0 ? 'E' : 'W';
+                const absLat = Math.abs(lat);
+                const absLng = Math.abs(lng);
+                return `${absLat.toFixed(7)}° ${latH} ${absLng.toFixed(7)}° ${lngH}`;
+            }
+
+            function updateInputFromMapCenter() {
+                if (isUpdatingFromMapMove || isUpdatingCoordsFromWords) return; 
+                isUpdatingFromMapMove = true;
+                const center = map.getCenter();
+                const formattedCenterString = formatCoordsForInput(center.lat, center.lng);
+                
+                if ($coordsInput.val() !== formattedCenterString) {
+                    isInitialLoadProcessing = false; 
+                    $coordsInput.val(formattedCenterString);
+                    $coordsInput.trigger('input');
+                }
+                isUpdatingFromMapMove = false; 
+            }
+
+            function displayProcessingDetails(detailsObj) {
+                let text = "";
+                if (!detailsObj) {
+                    $intermediateResults.val("No processing details available.");
+                    return;
+                }
+                text += `${detailsObj.conversionType || 'Conversion Details'}:\n`;
+                text += `Raw Input: ${detailsObj.rawInput || 'N/A'}\n`;
+
+                if (detailsObj.conversionType === "Coordinates to Words") {
+                    if (detailsObj.detectedFormat) text += `Detected Format: ${detailsObj.detectedFormat}\n`;
+                    if (detailsObj.convertedDdString) text += `Converted to DD: ${detailsObj.convertedDdString}\n`;
+                    text += '\n';
+                    if (detailsObj.parsed) {
+                        text += `Parsed DD for Calculation:\n` +
+                                `  Latitude: ${detailsObj.parsed.latVal.toFixed(5)}° ${detailsObj.parsed.latDir} (Map: ${detailsObj.mapCoords.lat.toFixed(5)})\n` +
+                                `  Longitude: ${detailsObj.parsed.lngVal.toFixed(5)}° ${detailsObj.parsed.lngDir} (Map: ${detailsObj.mapCoords.lng.toFixed(5)})\n\n`;
+                    }
+                    if (detailsObj.unifiedStage1) {
+                        text += `Unified Values:\n` + 
+                                `  Lat (0-180): ${detailsObj.unifiedStage1.lat.toFixed(5)}\n` +
+                                `  Lng (0-360): ${detailsObj.unifiedStage1.lng.toFixed(5)}\n\n`;
+                    }
+                    if (detailsObj.normalizedStage2) { 
+                        text += `Normalized Values (0-1):\n` + 
+                                `  Lat: ${detailsObj.normalizedStage2.lat.toFixed(7)}\n` +
+                                `  Lng: ${detailsObj.normalizedStage2.lng.toFixed(7)}\n\n`;
+                    }
+                    if (detailsObj.syllablesData) { 
+                        text += `Syllable Representation (Base-50, 4 digits):\n` +
+                                `  Lat Syllables: ${detailsObj.syllablesData.latString} (${detailsObj.syllablesData.latArray.join('-')})\n` +
+                                `  Lng Syllables: ${detailsObj.syllablesData.lngString} (${detailsObj.syllablesData.lngArray.join('-')})\n`;
+                    }
+                } else { 
+                    if (detailsObj.parsedWordsArray) text += `Parsed Words: ${detailsObj.parsedWordsArray.join(' ')}\n\n`;
+                    if (detailsObj.latSyllableArray) text += `Lat Syllables: ${detailsObj.latSyllableArray.join('-')} (Digits: ${detailsObj.latDigitArray.join(',')})\n`;
+                    if (detailsObj.lngSyllableArray) text += `Lng Syllables: ${detailsObj.lngSyllableArray.join('-')} (Digits: ${detailsObj.lngDigitArray.join(',')})\n\n`;
+                    
+                    if (detailsObj.normalizedStage2) { 
+                        text += `Re-calculated Normalized Values (0-1):\n` +
+                                `  Lat: ${detailsObj.normalizedStage2.lat.toFixed(7)}\n` +
+                                `  Lng: ${detailsObj.normalizedStage2.lng.toFixed(7)}\n\n`;
+                    }
+                    if (detailsObj.unifiedStage1) {
+                        text += `Re-calculated Unified Values:\n` +
+                                `  Lat (0-180): ${detailsObj.unifiedStage1.lat.toFixed(5)}\n` +
+                                `  Lng (0-360): ${detailsObj.unifiedStage1.lng.toFixed(5)}\n\n`;
+                    }
+                    if (detailsObj.finalDecoded) {
+                         text += `Decoded DD Values:\n` +
+                                `  Latitude: ${detailsObj.finalDecoded.lat.toFixed(7)}° ${detailsObj.finalDecoded.latH}\n` +
+                                `  Longitude: ${detailsObj.finalDecoded.lng.toFixed(7)}° ${detailsObj.finalDecoded.lngH}\n\n`;
+                    }
+                }
+                 if (detailsObj.error) {
+                    text += `\nError: ${detailsObj.error}`;
+                }
+                $intermediateResults.val(text);
+            }
+
+            $coordsInput.on('input', function() {
+                const inputValue = $(this).val().trim();
+                let processingDetails = {}; 
+
+                if (inputValue === "") {
+                    $intermediateResults.val("");
+                    $outputWords.val("");
+                    return;
+                }
+
+                const result = converter.processCoordinates(inputValue, processingDetails);
+                
+                if (!isUpdatingCoordsFromWords) { 
+                    displayProcessingDetails(processingDetails); 
+                }
+
+                if (result.error) {
+                    if (!isUpdatingCoordsFromWords) { 
+                        $outputWords.val("");
+                    }
+                } else {
+                    if (!isUpdatingCoordsFromWords) { 
+                         $outputWords.val(result.words);
+                    }
+                    if (result.mapCoordinates && !isUpdatingFromMapMove) { 
+                        if (isInitialLoadProcessing && inputValue != initialCoordinatesString) { 
+                            isInitialLoadProcessing = false;
+                        }
+                        map.setView([result.mapCoordinates.lat, result.mapCoordinates.lng], isInitialLoadProcessing? initialMapZoomOnLoad: zoomLevelForInput); 
+                    }
+                }
+            });
+
+            $outputWords.on('input', function() {
+                isInitialLoadProcessing = false; 
+                isUpdatingCoordsFromWords = true; 
+
+                if (wordsUpdateTimeout) {
+                    clearTimeout(wordsUpdateTimeout);
+                }
+
+                const wordsValue = $(this).val().trim();
+                let reverseProcessingDetails = {};
+
+                if (wordsValue === "") {
+                    $coordsInput.val(""); 
+                    $intermediateResults.val("Enter 4 words (e.g., BADA BEDE BIDI BODO) to convert.");
+                    wordsUpdateTimeout = setTimeout(function() {
+                        isUpdatingCoordsFromWords = false;
+                    }, 1000); 
+                    return;
+                }
+
+                const reverseResult = converter.wordsToLatLng(wordsValue, reverseProcessingDetails);
+                displayProcessingDetails(reverseProcessingDetails); 
+
+                if (reverseResult.error) {
+                    $coordsInput.val(""); 
+                } else {
+                    $coordsInput.val(reverseResult.ddString);
+                    $coordsInput.trigger('input'); 
+                }
+                
+                wordsUpdateTimeout = setTimeout(function() {
+                    isUpdatingCoordsFromWords = false;
+                }, 1000); 
+            });
+
+
+            map.on('move', function() {
+                updateInputFromMapCenter();
+            });
+            
+            $coordsInput.trigger('input'); 
+        });
+    </script>
+</body>
+</html>
