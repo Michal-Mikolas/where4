@@ -2,7 +2,7 @@
 
 **Where4** is a simple system that converts traditional latitude and longitude coordinates into a memorable 4-word address and vice-versa.
 
-**Live Demo:** [**where4.info**](https://where4.info)
+**Live Demo:** [**where4.eu**](https://where4.eu)
 
 ## What is Where4?
 
@@ -59,7 +59,7 @@ The conversion from words back to coordinates follows these steps in reverse.
 
 Try out the Where4 converter live:
 
-➡️ [**where4.info**](https://where4.info)
+➡️ [**where4.eu**](https://where4.eu)
 
 You can:
 *   Enter latitude/longitude coordinates (in DD, DMS, or DM format) to get a 4-word address.
