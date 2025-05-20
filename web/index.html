@@ -502,13 +502,15 @@
             const initialMapZoomOnLoad = 2; 
             const zoomLevelForInput = 16;   
 
-            $coordsInput.val(initialCoordinatesString);
+            // Don't pre-fill coordsInput yet, let hash logic decide
+            // $coordsInput.val(initialCoordinatesString); 
 
             let map = L.map('map').setView(initialMapCenter, initialMapZoomOnLoad);
             let isUpdatingFromMapMove = false; 
             let isInitialLoadProcessing = true; 
             let isUpdatingCoordsFromWords = false; 
             let wordsUpdateTimeout = null; 
+            let hashUpdateTimeout = null;
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -604,6 +606,9 @@
                 if (inputValue === "") {
                     $intermediateResults.val("");
                     $outputWords.val("");
+                    if (window.location.hash) { 
+                        window.location.hash = "";
+                    }
                     return;
                 }
 
@@ -619,7 +624,23 @@
                     }
                 } else {
                     if (!isUpdatingCoordsFromWords) { 
-                         $outputWords.val(result.words);
+                        const currentWords = result.words;
+                        $outputWords.val(currentWords);
+
+                        if (currentWords) {
+                            const hashValue = currentWords.replace(/ /g, '-').toLowerCase();
+                            if (hashUpdateTimeout) {
+                                clearTimeout(hashUpdateTimeout);
+                            }
+                            hashUpdateTimeout = setTimeout(() => {
+                                if (window.location.hash !== `#${hashValue}`) {
+                                    window.location.hash = hashValue;
+                                }
+                            }, 500); 
+                        } else if (window.location.hash) {
+                             if (hashUpdateTimeout) clearTimeout(hashUpdateTimeout);
+                             window.location.hash = "";
+                        }
                     }
                     if (result.mapCoordinates && !isUpdatingFromMapMove) { 
                         if (isInitialLoadProcessing && inputValue != initialCoordinatesString) { 
@@ -644,6 +665,9 @@
                 if (wordsValue === "") {
                     $coordsInput.val(""); 
                     $intermediateResults.val("Enter 4 words (e.g., BADA BEDE BIDI BODO) to convert.");
+                    if (window.location.hash) { 
+                        window.location.hash = "";
+                    }
                     wordsUpdateTimeout = setTimeout(function() {
                         isUpdatingCoordsFromWords = false;
                     }, 1000); 
@@ -670,7 +694,18 @@
                 updateInputFromMapCenter();
             });
             
-            $coordsInput.trigger('input'); 
+            const hashValueFromUrl = window.location.hash.substring(1); 
+            const where4HashRegex = /^[AEIOUBDFGKMNRSTaeioubdfgkmnrst]{4}-[AEIOUBDFGKMNRSTaeioubdfgkmnrst]{4}-[AEIOUBDFGKMNRSTaeioubdfgkmnrst]{4}-[AEIOUBDFGKMNRSTaeioubdfgkmnrst]{4}$/;
+
+            if (hashValueFromUrl && where4HashRegex.test(hashValueFromUrl)) {
+                const wordsFromHash = hashValueFromUrl.replace(/-/g, ' ').toUpperCase(); 
+                $outputWords.val(wordsFromHash);
+                $outputWords.trigger('input'); 
+            } else {
+                // No valid hash, use default initial coordinates
+                $coordsInput.val(initialCoordinatesString); // Set default coords
+                $coordsInput.trigger('input'); // Process them
+            }
         });
     </script>
 </body>
